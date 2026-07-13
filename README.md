@@ -12,7 +12,7 @@
 
 ### 移动端
 
-![面通 AI 移动端预览]
+
 <p align="center">
   <img src="./public/previews/mobile.jpg?v=2" alt="移动端预览" width="360">
 </p>
