@@ -4,6 +4,16 @@
 
 线上体验：<https://shili-ai-resume.wuy228511.chatgpt.site/>
 
+## 产品预览
+
+### 桌面端
+
+![面通 AI 桌面端预览](./public/previews/desktop.jpg)
+
+### 移动端
+
+![面通 AI 移动端预览](./public/previews/mobile.jpg)
+
 ## 产品目标
 
 面通 AI 主要解决三类问题：
