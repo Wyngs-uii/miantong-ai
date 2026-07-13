@@ -8,7 +8,7 @@
 
 ### 桌面端
 
-![面通 AI 桌面端预览](./public/previews/desktop.jpg)
+![画通 AI 桌面端预览](./public/previews/desktop.jpg?v=2)
 
 ### 移动端
 
