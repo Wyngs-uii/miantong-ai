@@ -13,6 +13,9 @@
 ### 移动端
 
 ![面通 AI 移动端预览](./public/previews/mobile.jpg)
+<p align="center">
+  <img src="./public/previews/mobile.jpg?v=2" alt="移动端预览" width="360">
+</p>
 
 ## 产品目标
 
