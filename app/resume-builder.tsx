@@ -45,6 +45,7 @@ type AIStatus = { selectedProvider: ProviderId; active: ProviderStatus; provider
 type AnalysisResult = {
   facts: Array<{ id: string; category: string; content: string; status: string }>;
   followUpQuestions: string[];
+  suggestedRoles: string[];
   resumeBullets: string[];
   jobAnalysis?: {
     score?: number;
@@ -88,6 +89,25 @@ const initialDraft: ResumeDraft = {
 const STORAGE_KEY = "shili-ai-draft-v1";
 const ANALYSIS_STORAGE_KEY = "shili-ai-analysis-v1";
 const JD_KEYWORDS = ["需求分析", "用户调研", "用户反馈", "功能设计", "产品设计", "产品迭代", "原型设计", "项目管理", "数据分析", "数据验证", "竞品分析", "内容运营", "内容策划", "活动策划", "活动运营", "社群运营", "用户运营", "沟通协调", "跨部门协作", "流程优化", "复盘", "文案", "新媒体", "短视频", "公众号", "小红书", "B站", "Excel", "Python", "SQL", "Figma", "Axure", "ChatGPT", "DeepSeek", "Gemini"];
+const KEYWORD_CONCEPTS: Array<{ label: string; aliases: string[] }> = [
+  { label: "需求分析", aliases: ["需求分析", "需求梳理", "需求拆解", "需求调研", "用户需求", "痛点分析", "业务需求"] },
+  { label: "用户调研", aliases: ["用户调研", "用户研究", "用户访谈", "问卷调查", "可用性测试", "焦点小组"] },
+  { label: "用户反馈", aliases: ["用户反馈", "意见收集", "反馈整理", "客诉分析", "问题收集", "用户建议"] },
+  { label: "功能设计", aliases: ["功能设计", "功能规划", "模块设计", "产品方案", "流程设计", "交互设计", "信息架构"] },
+  { label: "产品迭代", aliases: ["产品迭代", "版本迭代", "版本优化", "持续优化", "迭代改进", "根据反馈修改", "功能优化"] },
+  { label: "原型设计", aliases: ["原型设计", "交互原型", "页面原型", "线框图", "Figma", "Axure"] },
+  { label: "项目管理", aliases: ["项目管理", "项目推进", "进度管理", "任务排期", "资源协调", "项目交付"] },
+  { label: "数据分析", aliases: ["数据分析", "数据统计", "指标分析", "效果分析", "数据洞察", "数据复盘"] },
+  { label: "数据验证", aliases: ["数据验证", "效果验证", "A/B测试", "AB测试", "指标验证", "测试验证"] },
+  { label: "竞品分析", aliases: ["竞品分析", "竞品调研", "竞对分析", "产品对比", "市场调研"] },
+  { label: "内容运营", aliases: ["内容运营", "内容策划", "选题策划", "文案编辑", "内容发布", "账号运营"] },
+  { label: "活动运营", aliases: ["活动运营", "活动策划", "活动执行", "现场执行", "活动复盘", "物料对接"] },
+  { label: "用户运营", aliases: ["用户运营", "用户增长", "用户激活", "用户维护", "用户留存", "拉新"] },
+  { label: "社群运营", aliases: ["社群运营", "社群维护", "群运营", "粉丝群", "社区运营"] },
+  { label: "沟通协调", aliases: ["沟通协调", "跨部门协作", "跨团队协作", "协同推进", "对接协调", "人员协调"] },
+  { label: "流程优化", aliases: ["流程优化", "流程改进", "效率优化", "环节简化", "操作优化"] },
+  { label: "复盘", aliases: ["复盘", "经验总结", "问题回顾", "项目总结", "活动总结"] },
+];
 const EXPERIENCE_TYPE_API = { 项目: "project", 实习: "internship", 校园: "campus", 竞赛: "competition" } as const;
 
 const emptyDraft: ResumeDraft = {
@@ -168,6 +188,43 @@ function formatMonthRange(start: string, end: string) {
   return display(start || end);
 }
 
+function firstMatch(value: string, pattern: RegExp) {
+  return value.match(pattern)?.[1]?.trim() || "";
+}
+
+function cleanContactPiece(value: string) {
+  return value
+    .replace(/^(?:电话|手机|联系电话|邮箱|电子邮箱|邮件|微信|wechat|wx)\s*[:：]\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getContactLine(draft: Pick<ResumeDraft, "phone" | "email" | "wechat">) {
+  const sources = [draft.phone, draft.email, draft.wechat].map((item) => item.trim()).filter(Boolean);
+  const combined = sources.join(" · ");
+  const email = firstMatch(combined, /([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i);
+  const wechat =
+    firstMatch(combined, /(?:微信|wechat|wx)\s*[:：]?\s*([A-Za-z0-9_-]{3,})/i) ||
+    (!/@/.test(draft.wechat) ? cleanContactPiece(draft.wechat) : "");
+  const phoneSource = combined
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "")
+    .replace(/(?:微信|wechat|wx)\s*[:：]?\s*[A-Za-z0-9_-]{3,}/gi, "")
+    .split(/[·|｜,，;；\n]/)
+    .map(cleanContactPiece)
+    .find((piece) => /\d{5,}/.test(piece)) || "";
+  const seen = new Set<string>();
+  return [
+    phoneSource,
+    email,
+    wechat ? `微信：${wechat}` : "",
+  ].filter((piece) => {
+    const key = piece.replace(/\s+/g, "").toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).join(" · ");
+}
+
 async function photoAsJpeg(src: string) {
   if (!src) return null;
   const image = await loadImage(src);
@@ -214,18 +271,81 @@ function bulletSimilarity(left: string, right: string) {
   return (2 * overlap) / (a.size + b.size);
 }
 
-function informationScore(bullet: string) {
-  return normalizeBullet(bullet).length + ((bullet.match(/\d+(?:\.\d+)?%?|[A-Za-z][A-Za-z0-9.+#-]*/g) || []).length * 8);
-}
-
 function mergeResumeBullets(existing: string[], incoming: string[]) {
   const merged: string[] = [];
-  for (const candidate of [...incoming, ...existing].map((item) => item.trim()).filter(Boolean)) {
+  for (const candidate of [...existing, ...incoming].map((item) => item.trim()).filter(Boolean)) {
     const duplicateIndex = merged.findIndex((item) => normalizeBullet(item) === normalizeBullet(candidate) || bulletSimilarity(item, candidate) >= 0.52);
     if (duplicateIndex < 0) merged.push(candidate);
-    else if (informationScore(candidate) > informationScore(merged[duplicateIndex])) merged[duplicateIndex] = candidate;
   }
-  return merged.slice(0, 6);
+  return merged.slice(0, 8);
+}
+
+function normalizeMatchText(value: string) {
+  return value.toLowerCase().replace(/[\s、，。；：,.!?;:()（）/\\—_-]/g, "");
+}
+
+function conceptForKeyword(keyword: string) {
+  const normalized = normalizeMatchText(keyword);
+  return KEYWORD_CONCEPTS.find((concept) => concept.aliases.some((alias) => {
+    const candidate = normalizeMatchText(alias);
+    return normalized === candidate || normalized.includes(candidate) || candidate.includes(normalized);
+  }));
+}
+
+function canonicalKeyword(keyword: string) {
+  return conceptForKeyword(keyword)?.label || keyword.trim();
+}
+
+function semanticKeywordMatch(keyword: string, source: string) {
+  const normalizedSource = normalizeMatchText(source);
+  const concept = conceptForKeyword(keyword);
+  const aliases = concept?.aliases || [keyword];
+  return aliases.some((alias) => normalizedSource.includes(normalizeMatchText(alias)));
+}
+
+function extractJdKeywords(jobDescription: string) {
+  const concepts = KEYWORD_CONCEPTS.filter((concept) => concept.aliases.some((alias) => semanticKeywordMatch(alias, jobDescription))).map((concept) => concept.label);
+  const exact = JD_KEYWORDS.filter((word) => semanticKeywordMatch(word, jobDescription)).map(canonicalKeyword);
+  const latin = jobDescription.match(/[A-Za-z][A-Za-z0-9.+#-]{1,20}/g) || [];
+  return [...new Set([...concepts, ...exact, ...latin])];
+}
+
+function mergeRoleKeywords(existing: string, suggested: string[]) {
+  const current = existing.split(/[\/／、,，;；|｜]/).map((item) => item.trim()).filter(Boolean);
+  return [...new Set([...current, ...suggested.map((item) => item.trim()).filter(Boolean)])].slice(0, 6).join(" / ");
+}
+
+function roleKeywords(value: string) {
+  return value.split(/[\/／、,，;；|｜]/).map((item) => item.trim()).filter(Boolean);
+}
+
+function hasRoleKeyword(value: string, role: string) {
+  const normalizedRole = normalizeMatchText(role);
+  return roleKeywords(value).some((item) => normalizeMatchText(item) === normalizedRole);
+}
+
+function toggleRoleKeyword(value: string, role: string) {
+  const normalizedRole = normalizeMatchText(role);
+  const current = roleKeywords(value);
+  const exists = current.some((item) => normalizeMatchText(item) === normalizedRole);
+  const next = exists
+    ? current.filter((item) => normalizeMatchText(item) !== normalizedRole)
+    : [...current, role.trim()];
+  return [...new Set(next)].slice(0, 6).join(" / ");
+}
+
+function mergeAnalysisResult(existing: AnalysisResult | undefined, incoming: AnalysisResult): AnalysisResult {
+  if (!existing) return incoming;
+  const facts = [...existing.facts];
+  for (const fact of incoming.facts) {
+    if (!facts.some((item) => normalizeMatchText(item.content) === normalizeMatchText(fact.content))) facts.push(fact);
+  }
+  return {
+    ...incoming,
+    facts,
+    suggestedRoles: [...new Set([...(existing.suggestedRoles || []), ...(incoming.suggestedRoles || [])])].slice(0, 6),
+    resumeBullets: mergeResumeBullets(existing.resumeBullets || [], incoming.resumeBullets || []),
+  };
 }
 
 export default function ResumeBuilder() {
@@ -253,6 +373,7 @@ export default function ResumeBuilder() {
   const activeExperience = draft.experiences.find((item) => item.id === activeExperienceId) || draft.experiences[0] || null;
   const analysis = activeExperience ? analysisByExperience[activeExperience.id] || null : null;
   const activeFollowUpAnswers = activeExperience ? followUpAnswers[activeExperience.id] || {} : {};
+  const contactLine = getContactLine(draft);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -353,22 +474,19 @@ export default function ResumeBuilder() {
   }, [analysisByExperience]);
 
   const coveredKeywords = useMemo(() => {
-    const source = `${draft.jobDescription} ${activeExperience?.rawDescription || ""}`;
-    return ["需求分析", "功能设计", "用户反馈", "产品迭代", "AI 工具"].filter(
-      (word) => source.includes(word),
-    );
-  }, [draft.jobDescription, activeExperience?.rawDescription]);
+    return extractJdKeywords(draft.jobDescription).slice(0, 12);
+  }, [draft.jobDescription]);
 
   const matchSummary = useMemo(() => {
     const analyzedExperiences = draft.experiences.filter((experience) => Boolean(analysisByExperience[experience.id]) || experience.bullets.some((bullet) => bullet.trim()));
     const results = analyzedExperiences.map((experience) => analysisByExperience[experience.id]?.jobAnalysis).filter(Boolean) as NonNullable<AnalysisResult["jobAnalysis"]>[];
     const experienceText = draft.experiences.map((experience) => [experience.title, experience.role, experience.rawDescription, ...experience.confirmedDetails, ...experience.bullets].join(" ")).join(" ").toLowerCase();
     const modelKeywords = results.flatMap((item) => [...(item.coveredKeywords || []), ...(item.missingKeywords || [])]);
-    const jdKeywords = JD_KEYWORDS.filter((word) => draft.jobDescription.toLowerCase().includes(word.toLowerCase()));
+    const jdKeywords = extractJdKeywords(draft.jobDescription);
     const latinKeywords = draft.jobDescription.match(/[A-Za-z][A-Za-z0-9.+#-]{1,20}/g) || [];
-    const candidates = [...new Set([...modelKeywords, ...jdKeywords, ...latinKeywords])].filter((word) => word.length > 1);
-    const covered = candidates.filter((word) => experienceText.includes(word.toLowerCase()));
-    const missing = candidates.filter((word) => !experienceText.includes(word.toLowerCase()));
+    const candidates = [...new Set([...modelKeywords, ...jdKeywords, ...latinKeywords].map(canonicalKeyword))].filter((word) => word.length > 1);
+    const covered = candidates.filter((word) => semanticKeywordMatch(word, experienceText));
+    const missing = candidates.filter((word) => !semanticKeywordMatch(word, experienceText));
     const suggestions = [...new Set(results.flatMap((item) => item.suggestions || []))];
     const completeness = analyzedExperiences.length ? analyzedExperiences.reduce((sum, experience) => sum + (experience.title.trim() ? 10 : 0) + (experience.role.trim() ? 15 : 0) + (experience.dateRange.trim() ? 10 : 0) + (experience.rawDescription.trim() ? 25 : 0) + Math.min(40, experience.bullets.filter((bullet) => bullet.trim()).length * 10), 0) / analyzedExperiences.length : 0;
     const coverage = candidates.length ? (covered.length / candidates.length) * 100 : 0;
@@ -439,8 +557,12 @@ export default function ResumeBuilder() {
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "生成失败，请稍后重试。");
-      setAnalysisByExperience((current) => ({ ...current, [experienceId]: result }));
-      setDraft((current) => ({ ...current, experiences: current.experiences.map((item) => item.id === experienceId ? { ...item, bullets: mergeResumeBullets(item.bullets, result.resumeBullets) } : item) }));
+      setAnalysisByExperience((current) => ({ ...current, [experienceId]: mergeAnalysisResult(current[experienceId], result) }));
+      setDraft((current) => ({ ...current, experiences: current.experiences.map((item) => item.id === experienceId ? {
+        ...item,
+        role: item.role.trim() ? item.role : mergeRoleKeywords(item.role, result.suggestedRoles || []),
+        bullets: mergeResumeBullets(item.bullets, result.resumeBullets),
+      } : item) }));
       setActiveStep(3);
     } catch (error) {
       setGenerationError(error instanceof Error ? error.message : "生成失败，请稍后重试。");
@@ -470,6 +592,14 @@ export default function ResumeBuilder() {
     await requestAnalysis(target.id, `${target.rawDescription}\n\n用户补充确认的信息：\n${confirmedDetails.join("\n\n")}`, target.type, target.bullets);
   }
 
+  function saveCurrentProgress() {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
+    window.localStorage.setItem(ANALYSIS_STORAGE_KEY, JSON.stringify(analysisByExperience));
+    setSaved(true);
+    window.setTimeout(() => setSaved(false), 1200);
+    if (activeStep < 4) setActiveStep((step) => Math.min(4, step + 1));
+  }
+
   function clearDraft() {
     window.localStorage.removeItem(STORAGE_KEY);
     window.localStorage.removeItem(ANALYSIS_STORAGE_KEY);
@@ -491,13 +621,14 @@ export default function ResumeBuilder() {
   async function exportWord() {
     setExportBusy("word");
     try {
+      const contactLine = getContactLine(draft);
       const photo = await photoAsJpeg(draft.photoDataUrl);
       const run = (text: string, bold = false, size = 17) => `<w:r><w:rPr>${bold ? "<w:b/>" : ""}<w:rFonts w:ascii="Microsoft YaHei" w:eastAsia="Microsoft YaHei"/><w:sz w:val="${size}"/></w:rPr><w:t xml:space="preserve">${xmlEscape(text)}</w:t></w:r>`;
       const para = (text: string, options: { bold?: boolean; size?: number; after?: number; bullet?: boolean } = {}) => `<w:p><w:pPr>${options.bullet ? "<w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr>" : ""}<w:spacing w:after="${options.after ?? 45}" w:line="250" w:lineRule="auto"/></w:pPr>${run(text, options.bold, options.size)}</w:p>`;
       const heading = (text: string) => `<w:p><w:pPr><w:keepNext/><w:spacing w:before="150" w:after="70"/><w:pBdr><w:bottom w:val="single" w:sz="12" w:space="4" w:color="111111"/></w:pBdr></w:pPr>${run(text, true, 22)}</w:p>`;
       const twoCol = (left: string, right: string) => `<w:tbl><w:tblPr><w:tblW w:w="10100" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="7300"/><w:gridCol w:w="2800"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="7300" w:type="dxa"/></w:tcPr>${para(left, { bold: true })}</w:tc><w:tc><w:tcPr><w:tcW w:w="2800" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:jc w:val="right"/></w:pPr>${run(right, false, 17)}</w:p></w:tc></w:tr></w:tbl>`;
       const drawing = photo ? `<w:r><w:drawing><wp:inline><wp:extent cx="914400" cy="1219200"/><wp:docPr id="1" name="证件照" descr="求职者证件照"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="photo.jpg"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rId1"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="914400" cy="1219200"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>` : "";
-      const header = `<w:tbl><w:tblPr><w:tblW w:w="10100" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="8500"/><w:gridCol w:w="1600"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="8500" w:type="dxa"/><w:vAlign w:val="top"/></w:tcPr>${para(draft.name || "你的姓名", { bold: true, size: 36, after: 90 })}${para(`求职意向：${draft.targetRole || "目标岗位"}`, { bold: true })}${para(`${draft.phone} · ${draft.email}${draft.wechat ? ` · 微信：${draft.wechat}` : ""}`)}${para(`到岗时间：${draft.availability || "待填写"} · 毕业时间：${draft.graduationDate || "待填写"}`)}</w:tc><w:tc><w:tcPr><w:tcW w:w="1600" w:type="dxa"/><w:vAlign w:val="top"/></w:tcPr><w:p><w:pPr><w:jc w:val="right"/></w:pPr>${drawing}</w:p></w:tc></w:tr></w:tbl>`;
+      const header = `<w:tbl><w:tblPr><w:tblW w:w="10100" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="8500"/><w:gridCol w:w="1600"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="8500" w:type="dxa"/><w:vAlign w:val="top"/></w:tcPr>${para(draft.name || "你的姓名", { bold: true, size: 36, after: 90 })}${para(`求职意向：${draft.targetRole || "目标岗位"}`, { bold: true })}${contactLine ? para(contactLine) : ""}${para(`到岗时间：${draft.availability || "待填写"} · 毕业时间：${draft.graduationDate || "待填写"}`)}</w:tc><w:tc><w:tcPr><w:tcW w:w="1600" w:type="dxa"/><w:vAlign w:val="top"/></w:tcPr><w:p><w:pPr><w:jc w:val="right"/></w:pPr>${drawing}</w:p></w:tc></w:tr></w:tbl>`;
       let body = header + heading("教育经历") + twoCol(draft.school, draft.major);
       if (draft.courses) body += para(`相关课程：${draft.courses}`); if (draft.educationSummary) body += para(draft.educationSummary);
       if (draft.selfSummary) body += heading("自我评价") + para(draft.selfSummary);
@@ -519,6 +650,7 @@ export default function ResumeBuilder() {
   async function exportJpg() {
     setExportBusy("jpg");
     try {
+      const contactLine = getContactLine(draft);
       const canvas = document.createElement("canvas"); canvas.width = 2480; canvas.height = 3508;
       const context = canvas.getContext("2d");
       if (!context) throw new Error("浏览器不支持图片导出");
@@ -530,7 +662,7 @@ export default function ResumeBuilder() {
       const section = (title: string) => { y += 30; drawText(title, left, maxWidth, 42, true, 8); context.fillRect(left, y, maxWidth, 5); y += 44; };
       const row = (a: string, b: string) => { font(35, true); context.fillText(a, left, y); font(33); context.fillText(b, right - context.measureText(b).width, y); y += 54; };
       font(72, true); context.fillText(draft.name || "你的姓名", left, y); y += 88;
-      drawText(`求职意向：${draft.targetRole || "目标岗位"}`, left, 1650, 35, true, 14); drawText(`${draft.phone} · ${draft.email}${draft.wechat ? ` · 微信：${draft.wechat}` : ""}`, left, 1650, 34); drawText(`到岗时间：${draft.availability || "待填写"} · 毕业时间：${draft.graduationDate || "待填写"}`, left, 1650, 34);
+      drawText(`求职意向：${draft.targetRole || "目标岗位"}`, left, 1650, 35, true, 14); if (contactLine) drawText(contactLine, left, 1650, 34); drawText(`到岗时间：${draft.availability || "待填写"} · 毕业时间：${draft.graduationDate || "待填写"}`, left, 1650, 34);
       if (draft.photoDataUrl) { const image = await loadImage(draft.photoDataUrl); const w = 283, h = 378; context.drawImage(image, right - w, 136, w, h); }
       y = Math.max(y + 20, 560); section("教育经历"); row(draft.school, draft.major); if (draft.courses) drawText(`相关课程：${draft.courses}`, left, maxWidth); if (draft.educationSummary) drawText(draft.educationSummary, left, maxWidth);
       if (draft.selfSummary) { section("自我评价"); drawText(draft.selfSummary, left, maxWidth); }
@@ -657,7 +789,11 @@ export default function ResumeBuilder() {
                   <fieldset className="month-range"><legend>时间范围</legend><label>开始年月<input type="month" value={parseMonthRange(activeExperience.dateRange).start} onChange={(e) => updateExperienceMonth("start", e.target.value)} /></label><span>至</span><label>结束年月<input type="month" value={parseMonthRange(activeExperience.dateRange).end} onChange={(e) => updateExperienceMonth("end", e.target.value)} /></label></fieldset>
                 </div>
                 <label>经历名称<input value={activeExperience.title} onChange={(e) => updateExperience({ title: e.target.value })} /></label>
-                <label>项目角色 / 职责关键词<input value={activeExperience.role} onChange={(e) => updateExperience({ role: e.target.value })} placeholder="例如：产品构思 / AI 工具搭建 / 内容优化" /></label>
+                <label>项目角色 / 职责关键词 <span className="field-hint">AI 提炼后会自动联想，也可手动调整</span><input value={activeExperience.role} onChange={(e) => updateExperience({ role: e.target.value })} placeholder="AI 将根据经历描述和 JD 自动推荐" /></label>
+                {analysis?.suggestedRoles?.length ? <div className="role-suggestions"><span>AI 推荐职责词</span><div>{analysis.suggestedRoles.map((role) => {
+                  const selected = hasRoleKeyword(activeExperience.role, role);
+                  return <button type="button" key={role} className={selected ? "selected" : ""} aria-pressed={selected} onClick={() => updateExperience({ role: toggleRoleKeyword(activeExperience.role, role) })}>{selected ? "✓" : "＋"} {role}</button>;
+                })}</div><small>点击加入，再次点击可取消。</small></div> : null}
                 <label>用自己的话描述这段经历<textarea rows={7} value={activeExperience.rawDescription} onChange={(e) => updateExperience({ rawDescription: e.target.value })} /></label>
                 <div className="experience-actions"><button className="danger-button" onClick={() => removeExperience(activeExperience.id)}>删除这段经历</button><button className="primary-button" onClick={generateBullets} disabled={isGenerating || !activeExperience.rawDescription.trim()}>{isGenerating ? "正在提炼…" : "AI 提炼这段经历"}</button></div>
                 {generationError && <p className="error-message" role="alert">{generationError}</p>}
@@ -704,24 +840,29 @@ export default function ResumeBuilder() {
                   </button>
                 </div>
               ) : null}
+              {analysis?.suggestedRoles?.length && activeExperience ? <div className="role-suggestions generated-role-suggestions"><span>AI 联想的角色 / 职责词</span><div>{analysis.suggestedRoles.map((role) => {
+                const selected = hasRoleKeyword(activeExperience.role, role);
+                return <button type="button" key={role} className={selected ? "selected" : ""} aria-pressed={selected} onClick={() => updateExperience({ role: toggleRoleKeyword(activeExperience.role, role) })}>{selected ? "✓" : "＋"} {role}</button>;
+              })}</div><small>点击加入，再次点击可取消；不会影响其他职责。</small></div> : null}
               {(activeExperience?.bullets || []).map((bullet, index) => (
-                <label key={index}>要点 {index + 1}<textarea rows={4} value={bullet} onChange={(e) => {
+                <label className="bullet-editor" key={index}><span><strong>要点 {index + 1}</strong><button type="button" onClick={() => updateExperience({ bullets: activeExperience!.bullets.filter((_, bulletIndex) => bulletIndex !== index) })}>删除要点</button></span><textarea rows={4} value={bullet} onChange={(e) => {
                   const bullets = [...(activeExperience?.bullets || [])]; bullets[index] = e.target.value; updateExperience({ bullets });
                 }} /></label>
               ))}
+              {activeExperience && activeExperience.bullets.length < 8 ? <button type="button" className="add-bullet-button" onClick={() => updateExperience({ bullets: [...activeExperience.bullets, ""] })}>＋ 添加一条要点</button> : null}
             </div>
           )}
 
           <div className="form-actions">
             <button className="text-button" onClick={() => setActiveStep((step) => Math.max(0, step - 1))} disabled={activeStep === 0}>上一步</button>
-            <button className="primary-button" onClick={() => setActiveStep((step) => Math.min(4, step + 1))} disabled={activeStep === 4}>保存并继续</button>
+            <button className="primary-button" onClick={saveCurrentProgress}>{activeStep === 4 ? "保存修改" : "保存并继续"}</button>
           </div>
         </div>
 
         <aside className="preview-column">
           <div className="preview-label"><span>实时预览</span><small>A4 · ATS 单栏</small></div>
           <article className="resume-page" ref={resumeRef}>
-            <header className="resume-header"><div className="resume-identity"><h2>{draft.name || "你的姓名"}</h2><p><strong>求职意向：</strong>{draft.targetRole || "目标岗位"}</p><p>{draft.phone} · {draft.email}{draft.wechat ? ` · 微信：${draft.wechat}` : ""}</p><p><strong>到岗时间：</strong>{draft.availability || "待填写"} · <strong>毕业时间：</strong>{draft.graduationDate || "待填写"}</p></div>{draft.photoDataUrl && <img className="resume-photo" src={draft.photoDataUrl} alt="证件照" />}</header>
+            <header className="resume-header"><div className="resume-identity"><h2>{draft.name || "你的姓名"}</h2><p><strong>求职意向：</strong>{draft.targetRole || "目标岗位"}</p>{contactLine && <p>{contactLine}</p>}<p><strong>到岗时间：</strong>{draft.availability || "待填写"} · <strong>毕业时间：</strong>{draft.graduationDate || "待填写"}</p></div>{draft.photoDataUrl && <img className="resume-photo" src={draft.photoDataUrl} alt="证件照" />}</header>
             <section><h3>教育经历</h3><div className="resume-row"><strong>{draft.school}</strong><span>{draft.major}</span></div>{draft.courses && <p>相关课程：{draft.courses}</p>}{draft.educationSummary && <p>{draft.educationSummary}</p>}</section>
             {draft.selfSummary && <section><h3>自我评价</h3><p>{draft.selfSummary}</p></section>}
             <section><h3>项目 / 实训经历</h3>{draft.experiences.map((experience) => <div className="resume-experience" key={experience.id}><div className="resume-row"><strong>{experience.title}</strong><span>{experience.dateRange}</span></div>{experience.role && <p className="resume-role">项目角色：{experience.role}</p>}<ul>{experience.bullets.map((bullet, index) => <li key={index}>{bullet}</li>)}</ul></div>)}</section>

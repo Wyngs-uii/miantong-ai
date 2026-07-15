@@ -26,6 +26,7 @@ test("server-renders the Miantong AI product page", async () => {
   assert.match(html, /AI 只优化你确认过的信息/);
   assert.match(html, /A4 · ATS 单栏/);
   assert.match(html, /class="brand-mark">面<\/span>/);
+  assert.match(html, /favicon\.svg\?v=4/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|SkeletonPreview/);
 });
 
@@ -121,6 +122,9 @@ test("print, local draft, and provider switching behaviors remain wired", async 
   assert.match(client, /activeFollowUpAnswers/);
   assert.match(client, /requestAnalysis\(experienceId/);
   assert.match(client, /mergeResumeBullets\(item\.bullets, result\.resumeBullets\)/);
+  assert.match(client, /for \(const candidate of \[\.\.\.existing, \.\.\.incoming\]/);
+  assert.match(client, /return merged\.slice\(0, 8\)/);
+  assert.match(client, /mergeAnalysisResult\(current\[experienceId\], result\)/);
   assert.match(client, /bullets: mergeResumeBullets\(\[\], experience\.bullets \|\| \[\]\)/);
   assert.match(client, /bulletSimilarity\(item, candidate\) >= 0\.52/);
   assert.match(client, /ANALYSIS_STORAGE_KEY/);
@@ -141,6 +145,15 @@ test("print, local draft, and provider switching behaviors remain wired", async 
   assert.match(client, /添加实习经历/);
   assert.match(client, /全部经历关键词覆盖/);
   assert.match(client, /matchSummary/);
+  assert.match(client, /semanticKeywordMatch/);
+  assert.match(client, /KEYWORD_CONCEPTS/);
+  assert.match(client, /用户访谈/);
+  assert.match(client, /版本优化/);
+  assert.match(client, /suggestedRoles/);
+  assert.match(client, /AI 推荐职责词/);
+  assert.match(client, /保存修改/);
+  assert.match(client, /添加一条要点/);
+  assert.match(client, /删除要点/);
   assert.match(client, /type="month"/);
   assert.match(client, /updateExperienceMonth/);
   assert.match(client, /开始年月/);
@@ -150,6 +163,11 @@ test("print, local draft, and provider switching behaviors remain wired", async 
   assert.match(css, /\.month-range\{[^}]*grid-template-columns:minmax\(0,1fr\) 18px minmax\(0,1fr\)/);
   assert.match(client, /选择照片/);
   assert.match(client, /工作室证件照/);
+  assert.match(client, /function getContactLine/);
+  assert.match(client, /const contactLine = getContactLine\(draft\)/);
+  assert.match(client, /contactLine \? para\(contactLine\) : ""/);
+  assert.match(client, /if \(contactLine\) drawText\(contactLine/);
+  assert.match(client, /\{contactLine && <p>\{contactLine\}<\/p>\}/);
   const photoStudio = await readFile(new URL("../app/photo-studio.tsx", import.meta.url), "utf8");
   assert.match(photoStudio, /ImageSegmenter/);
   assert.match(photoStudio, /outputCategoryMask: true/);
@@ -165,4 +183,12 @@ test("print, local draft, and provider switching behaviors remain wired", async 
   assert.match(css, /font-size:8\.2pt!important/);
   assert.match(css, /list-style:disc outside!important/);
   assert.match(css, /\.resume-header\{[^}]*border:0/);
+});
+
+test("AI role suggestions can be toggled on and off", async () => {
+  const source = await readFile(new URL("../app/resume-builder.tsx", import.meta.url), "utf8");
+  assert.match(source, /function toggleRoleKeyword/);
+  assert.match(source, /aria-pressed=\{selected\}/);
+  assert.match(source, /再次点击可取消/);
+  assert.doesNotMatch(source, /onClick=\{\(\) => updateExperience\(\{ role: mergeRoleKeywords\(activeExperience\.role, \[role\]\) \}\)\}/);
 });
