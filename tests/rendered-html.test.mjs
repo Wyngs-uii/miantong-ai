@@ -26,7 +26,8 @@ test("server-renders the Miantong AI product page", async () => {
   assert.match(html, /AI 只优化你确认过的信息/);
   assert.match(html, /A4 · ATS 单栏/);
   assert.match(html, /class="brand-mark">面<\/span>/);
-  assert.match(html, /favicon\.svg\?v=4/);
+  assert.match(html, /icon-32\.png\?v=5/);
+  assert.match(html, /apple-touch-icon\.png\?v=5/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|SkeletonPreview/);
 });
 

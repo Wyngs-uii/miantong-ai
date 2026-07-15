@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./public/favicon.svg" alt="面通 AI Logo" width="92" height="92">
+<img src="./public/apple-touch-icon.png?v=1" alt="面通 AI Logo" width="92" height="92">
 
 # 面通 AI
 
