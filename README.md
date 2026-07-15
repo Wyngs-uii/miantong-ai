@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="./public/favicon.svg" alt="面通 AI Logo" width="92" height="92">
+
 # 面通 AI
 
 ### 面向低经验大学生的 AI 简历生成与岗位匹配工具
